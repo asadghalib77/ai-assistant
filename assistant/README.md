@@ -105,18 +105,19 @@ stay in memory. The default model loads in the background at startup.
 
 ## Quick start
 
-```bash
-# 1. API (terminal 1)
-cd api
-uv sync
-cp .env.example .env            # optional; defaults work
-uv run fastapi dev              # http://localhost:8000 Â· docs at /docs
+Install dependencies once in `api/`, `agent/` and `web/`. Then run the entire
+app from one terminal:
 
-# 2. Web (terminal 2)
+```powershell
 cd web
-npm install
 npm run dev                     # http://localhost:3000
 ```
+
+This starts the API on port 8000 and the web app on port 3000. It also starts
+the LiveKit worker automatically when credentials are set in `api/.env`.
+Ctrl+C stops all three process trees. See [VOICE.md](VOICE.md) for setup.
+`npm run dev:web` remains available for an independently managed API.
+
 
 The web app calls `/api/*` on its own origin and Next.js forwards it to the API
 (`API_URL`, default `http://localhost:8000`), so there is no CORS setup.
@@ -237,3 +238,9 @@ integrated-gradients completeness property, and every endpoint and error path.
   more processes or replicas, and use `ENABLED_MODELS` to load only what you need.
 - History lives in each user's browser. Add a database if you need shared history.
 
+
+
+## LiveKit voice mode
+
+Voice setup, environment variables, startup commands, access controls and tests
+are documented in [VOICE.md](VOICE.md).

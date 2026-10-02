@@ -22,3 +22,5 @@ next-env.d.ts
 
 # Browser verification artifacts
 photo-chat-e2e-out/
+
+voice-e2e-out/

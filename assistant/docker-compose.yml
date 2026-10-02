@@ -32,5 +32,18 @@ services:
       - "3000:3000"
     restart: unless-stopped
 
+  agent:
+    profiles: [voice]
+    build: ./agent
+    env_file:
+      - path: ./agent/.env
+        required: false
+    environment:
+      API_URL: http://api:8000
+    depends_on:
+      - api
+    restart: unless-stopped
+    stop_grace_period: 60s
+
 volumes:
   models:

@@ -13,12 +13,18 @@ from app.core.body_limit import BodySizeLimit
 from app.core.config import Settings, get_settings
 from app.ml.registry import ModelRegistry
 from app.photo_service import PhotoService
-from app.routes import health, models, photos, predict
+from app.routes import generate, health, models, photos, predict
+from app.voice import VoiceSettings, mount_voice
+from app.voice_brain import chat_brain
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(name)s  %(message)s")
 
 
-def create_app(settings: Settings | None = None, registry: ModelRegistry | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None,
+    registry: ModelRegistry | None = None,
+    voice_settings: VoiceSettings | None = None,
+) -> FastAPI:
     settings = settings or get_settings()
 
     @asynccontextmanager
@@ -51,11 +57,17 @@ def create_app(settings: Settings | None = None, registry: ModelRegistry | None 
     )
 
     app.add_middleware(
+        BodySizeLimit,
+        max_bytes=16 * 1024,
+        paths=("/api/images/generate",),
+    )
+    app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
         allow_methods=["GET", "POST"],
         allow_headers=["Content-Type"],
     )
-    for router in (health.router, models.router, predict.router, photos.router):
+    for router in (health.router, models.router, predict.router, photos.router, generate.router):
         app.include_router(router, prefix="/api")
+    mount_voice(app, brain=chat_brain, settings=voice_settings)
     return app

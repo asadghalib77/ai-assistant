@@ -17,8 +17,12 @@ export function Sidebar({
   onNew,
   onOpen,
   onClear,
+  onDeleteAnalysis,
+  onOpenChat,
   username,
   onUsernameChange,
+  userPhoto,
+  onUserPhotoChange,
 }: {
   history: HistoryEntry[];
   models: ModelInfo[];
@@ -26,8 +30,12 @@ export function Sidebar({
   onNew: () => void;
   onOpen: (entry: HistoryEntry) => void;
   onClear: () => void;
+  onDeleteAnalysis: (id: string) => void;
+  onOpenChat: () => void;
   username: string;
   onUsernameChange: (name: string) => void;
+  userPhoto: string | null;
+  onUserPhotoChange: (photo: string | null) => void;
 }) {
   const nameOf = (id: string) => models.find((m) => m.id === id)?.name ?? id.split("/").pop();
 
@@ -54,9 +62,10 @@ export function Sidebar({
           <button
             type="button"
             onClick={onClear}
+            aria-label="Clear analysis history"
             className="rounded px-1 text-xs text-muted-foreground hover:text-foreground"
           >
-            Clear
+            Clear history
           </button>
         )}
       </div>
@@ -85,7 +94,7 @@ export function Sidebar({
       </nav>
 
       <div className="border-t pt-2">
-        <UserMenu username={username} onUsernameChange={onUsernameChange} apiOnline={apiOnline} />
+        <UserMenu analyses={history} onOpenAnalysis={onOpen} onDeleteAnalysis={onDeleteAnalysis} onClearAnalyses={onClear} onOpenChat={onOpenChat} userPhoto={userPhoto} onUserPhotoChange={onUserPhotoChange} username={username} onUsernameChange={onUsernameChange} apiOnline={apiOnline} />
       </div>
     </div>
   );

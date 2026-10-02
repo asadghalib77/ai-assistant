@@ -10,6 +10,7 @@ import type { usePhotoModels } from "@/hooks/use-photo-models";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { DictationInput } from "@/components/voice/dictation-input";
 import { Textarea } from "@/components/ui/textarea";
 import { EXAMPLES } from "@/lib/config";
 import { count, duration, wordCount } from "@/lib/format";
@@ -24,6 +25,7 @@ export type AnalysisState =
   | { phase: "error"; message: string };
 
 export function AnalyzeView({
+  active = true,
   text,
   onTextChange,
   onAnalyze,
@@ -36,6 +38,7 @@ export function AnalyzeView({
   photoTask,
   onPhotoTaskChange,
 }: {
+  active?: boolean;
   text: string;
   onTextChange: (text: string) => void;
   onAnalyze: (text?: string) => void;
@@ -114,6 +117,7 @@ export function AnalyzeView({
               placeholder="Type or paste a review, a post, a headline…"
               className="max-h-96 min-h-56 resize-y rounded-xl bg-background/50 p-4 text-[15px] leading-relaxed md:text-[15px]"
             />
+            <DictationInput value={text} onChange={onTextChange} maxLength={maxChars} disabled={running || !active} label="analysis text" />
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="flex flex-wrap gap-x-3 text-xs text-muted-foreground tabular">
                 <span>

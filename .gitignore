@@ -8,3 +8,16 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Credentials stay local, including new services and environment variants.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Generated checks and obsolete project snapshots
+.pytest_cache/
+.ruff_cache/
+*-e2e-out/
+/assistant.zip

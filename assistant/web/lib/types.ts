@@ -100,6 +100,8 @@ export interface ChatImage {
 }
 
 export interface ChatMessage {
+  generation?: boolean;
+  voice?: boolean;
   id: string;
   role: "user" | "assistant";
   content: string;

@@ -118,13 +118,22 @@ class PhotoService:
         return answer
 
     async def stream(self, model: str, messages: list[ChatMessage]) -> AsyncIterator[str]:
+        async for item in self.stream_messages(model, to_ollama_messages(messages)):
+            yield item
+
+    async def stream_messages(
+        self, model: str, messages: list[dict], *, temperature: float | None = None
+    ) -> AsyncIterator[str]:
         try:
             yield event("model", model=model)
             response = await self.client.chat(
                 model=model,
-                messages=to_ollama_messages(messages),
+                messages=messages,
                 stream=True,
-                options={"num_predict": 4096},
+                options={
+                    "num_predict": 4096,
+                    **({"temperature": temperature} if temperature is not None else {}),
+                },
             )
             received = False
             async with aclosing(response):

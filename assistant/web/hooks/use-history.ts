@@ -60,5 +60,13 @@ export function useHistory() {
     return () => persist(backup);
   }, [entries, persist]);
 
-  return { entries, add, clear };
+  const remove = useCallback((id: string) => {
+    setEntries((current) => {
+      const next = current.filter((entry) => entry.id !== id);
+      writeStore(KEYS.history, next);
+      return next;
+    });
+  }, []);
+
+  return { entries, add, clear, remove };
 }

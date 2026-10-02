@@ -13,6 +13,7 @@ export function readStore<T>(key: string, fallback: T): T {
 export function writeStore(key: string, value: unknown): void {
   try {
     window.localStorage.setItem(key, JSON.stringify(value));
+    window.dispatchEvent(new CustomEvent("assistant:store-updated", { detail: key }));
   } catch {
     // storage full or unavailable: history is a convenience, keep going
   }
@@ -22,6 +23,7 @@ export const KEYS = {
   photoChat: "sentiment-studio.photo-chat.v1",
   photoModel: "sentiment-studio.photo-model.v1",
   username: "sentiment-studio.username.v1",
+  userPhoto: "sentiment-studio.user-photo.v1",
   model: "sentiment-studio.model.v1",
   history: "sentiment-studio.history.v1",
 } as const;

@@ -8,7 +8,7 @@ Lists and dicts are JSON in env vars, e.g.
 from functools import lru_cache
 from typing import Literal, Self
 
-from pydantic import Field, model_validator
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.ml.catalog import CATALOG, DEFAULT_MODEL_ID
@@ -50,6 +50,10 @@ class Settings(BaseSettings):
     max_images_per_request: int = Field(default=20, ge=1, le=100)
     max_image_bytes: int = Field(default=10 * 1024 * 1024, ge=1024, le=20 * 1024 * 1024)
     vision_models: list[str] = Field(default_factory=list)
+
+    # Cloudflare image generation: no local model downloads.
+    cloudflare_account_id: str = ""
+    cloudflare_api_token: SecretStr = SecretStr("")
 
     # Explanations (integrated gradients). 0 turns them off.
     explain_steps: int = Field(default=16, ge=0, le=200)

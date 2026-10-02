@@ -5,6 +5,7 @@ import { MenuIcon, RefreshCwIcon, ServerCrashIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import { AnalyzeView, type AnalysisState } from "@/components/studio/analyze-view";
+import { ImageGenerationView } from "@/components/studio/image-generation-view";
 import { PhotoChatView } from "@/components/studio/photo-chat-view";
 import { BatchView } from "@/components/studio/batch-view";
 import { ModelView } from "@/components/studio/model-view";
@@ -22,6 +23,7 @@ import { ApiError, api, errorMessage, request as apiRequest } from "@/lib/api";
 import { collectGarbage, loadImage } from "@/lib/image-store";
 import { blobToBase64, DEFAULT_IMAGE_LIMITS } from "@/lib/images";
 import { APP_CONFIG } from "@/lib/config";
+import { isProfilePhoto } from "@/lib/profile-photo";
 import { KEYS, readStore, writeStore } from "@/lib/storage";
 import { GithubLink } from "@/components/studio/github-link";
 import { LinkedinLink } from "@/components/studio/linkedin-link";
@@ -36,15 +38,18 @@ export function StudioApp() {
   const recent = useHistory();
   const [view, setView] = useState<View>("analyze");
   const [navOpen, setNavOpen] = useState(false);
+  const [userPhoto, setUserPhoto] = useState<string | null>(null);
   const [username, setUsername] = useState<string>(APP_CONFIG.user.name);
   useEffect(() => {
     const restore = () => {
+      const photo = readStore<unknown>(KEYS.userPhoto, null);
+      setUserPhoto(isProfilePhoto(photo) ? photo : null);
       const saved = readStore<unknown>(KEYS.username, APP_CONFIG.user.name);
       setUsername(typeof saved === "string" && saved.trim() ? saved.trim().slice(0, 40) : APP_CONFIG.user.name);
     };
     restore();
     const sync = (event: StorageEvent) => {
-      if (event.key === KEYS.username || event.key === null) restore();
+      if (event.key === KEYS.username || event.key === KEYS.userPhoto || event.key === null) restore();
     };
     window.addEventListener("storage", sync);
     return () => window.removeEventListener("storage", sync);
@@ -54,7 +59,7 @@ export function StudioApp() {
     writeStore(KEYS.username, name);
   };
   const [text, setText] = useState("");
-  const [purpose, setPurpose] = useState<"analyze" | "chat" | null>(null);
+  const [purpose, setPurpose] = useState<"analyze" | "chat" | "generate" | null>("analyze");
   const [chatBusy, setChatBusy] = useState(false);
   const [analysis, setAnalysis] = useState<AnalysisState>({ phase: "idle" });
   const photoModels = usePhotoModels(view === "analyze");
@@ -234,7 +239,11 @@ export function StudioApp() {
       onNew={newAnalysis}
       onOpen={openEntry}
       onClear={clearHistory}
+      onDeleteAnalysis={recent.remove}
+      onOpenChat={() => { setNavOpen(false); changeView("analyze"); setPurpose("chat"); }}
       username={username}
+      userPhoto={userPhoto}
+      onUserPhotoChange={(photo) => { setUserPhoto(photo); writeStore(KEYS.userPhoto, photo); }}
       onUsernameChange={changeUsername}
     />
   );
@@ -309,13 +318,15 @@ export function StudioApp() {
               <div className="mb-5 rounded-xl border bg-card p-4 text-center">
                 <p className="mb-3 text-sm font-medium">What would you like to do?</p>
                 <div className="flex flex-wrap justify-center gap-2" role="group" aria-label="Choose an action">
-                  <Button variant={purpose === "analyze" ? "default" : "outline"} aria-pressed={purpose === "analyze"} disabled={chatBusy || analysis.phase === "running"} onClick={() => setPurpose("analyze")}>Analyze text / photos</Button>
-                  <Button variant={purpose === "chat" ? "default" : "outline"} aria-pressed={purpose === "chat"} disabled={chatBusy || analysis.phase === "running"} onClick={() => setPurpose("chat")}>Chat / ask questions</Button>
+                  <Button variant={purpose === "analyze" ? "default" : "outline"} aria-pressed={purpose === "analyze"} disabled={chatBusy || analysis.phase === "running"} onClick={() => { setPurpose("analyze"); }}>Analyze text / photos</Button>
+                  <Button variant={purpose === "chat" ? "default" : "outline"} aria-pressed={purpose === "chat"} disabled={chatBusy || analysis.phase === "running"} onClick={() => { setPurpose("chat"); }}>Chat / ask questions</Button>
+                  <Button variant={purpose === "generate" ? "default" : "outline"} aria-pressed={purpose === "generate"} disabled={chatBusy || analysis.phase === "running"} onClick={() => setPurpose("generate")}>Generate an image</Button>
                 </div>
-                {!purpose && <p className="mt-3 text-xs text-muted-foreground">Choose sentiment analysis or a conversation with Ollama to get started.</p>}
+                {!purpose && <p className="mt-3 text-xs text-muted-foreground">Choose sentiment analysis, chat, or image generation to get started.</p>}
               </div>
               <div hidden={purpose !== "analyze"}>
               <AnalyzeView
+                active={view === "analyze" && purpose === "analyze"}
                 text={text}
                 onTextChange={setText}
                 onAnalyze={(value) => void analyze(value)}
@@ -330,6 +341,7 @@ export function StudioApp() {
               />
               </div>
               {purpose === "chat" && <PhotoChatView active={view === "analyze"} sharedAttachments={attachments} draft={text} onDraftChange={setText} onBusyChange={setChatBusy} />}
+              <div hidden={purpose !== "generate"}><ImageGenerationView /></div>
             </TabsContent>
             <TabsContent value="batch" forceMount className="data-[state=inactive]:hidden">
               <BatchView
