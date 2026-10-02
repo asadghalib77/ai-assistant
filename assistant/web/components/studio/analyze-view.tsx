@@ -3,20 +3,24 @@
 import { ChartNoAxesColumnIncreasingIcon, LayersIcon, LoaderCircleIcon, RefreshCwIcon, ScanTextIcon, TriangleAlertIcon } from "lucide-react";
 
 import { Eyebrow, ResultView } from "@/components/studio/result-view";
+import { PhotoInput } from "@/components/photos/photo-input";
+import { PhotoGallery } from "@/components/photos/photo-gallery";
+import type { UseAttachments } from "@/hooks/use-attachments";
+import type { usePhotoModels } from "@/hooks/use-photo-models";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { EXAMPLES } from "@/lib/config";
 import { count, duration, wordCount } from "@/lib/format";
-import type { Limits, ModelInfo, PredictResponse } from "@/lib/types";
+import type { Limits, ModelInfo, PhotoSource, PhotoTask, PredictResponse } from "@/lib/types";
 
 const SPECIAL_TOKENS = new Set(["[CLS]", "[SEP]", "[PAD]", "<s>", "</s>", "<pad>"]);
 
 export type AnalysisState =
   | { phase: "idle" }
-  | { phase: "running"; modelReady: boolean }
-  | { phase: "done"; result: PredictResponse }
+  | { phase: "running"; modelReady: boolean; readingPhotos?: boolean }
+  | { phase: "done"; result: PredictResponse; photo?: PhotoSource }
   | { phase: "error"; message: string };
 
 export function AnalyzeView({
@@ -27,6 +31,10 @@ export function AnalyzeView({
   model,
   models,
   limits,
+  attachments,
+  photoModels,
+  photoTask,
+  onPhotoTaskChange,
 }: {
   text: string;
   onTextChange: (text: string) => void;
@@ -35,11 +43,19 @@ export function AnalyzeView({
   model: ModelInfo | null;
   models: ModelInfo[];
   limits: Limits | null;
+  attachments: UseAttachments;
+  photoModels: ReturnType<typeof usePhotoModels>;
+  photoTask: PhotoTask;
+  onPhotoTaskChange: (task: PhotoTask) => void;
 }) {
   const maxChars = limits?.max_text_chars ?? 5000;
   const running = analysis.phase === "running";
   const examples = EXAMPLES[model?.domain ?? "Topic"] ?? EXAMPLES.Topic;
   const result = analysis.phase === "done" ? analysis.result : null;
+  const photo = analysis.phase === "done" ? analysis.photo : undefined;
+  const hasPhotos = attachments.items.length > 0;
+  const photoBlocked = hasPhotos && (attachments.processing || photoModels.loading || !!photoModels.error || !photoModels.chosen?.vision);
+  const canSubmit = !running && !photoBlocked && (!!text.trim() || hasPhotos) && !(hasPhotos && photoTask === "question" && !text.trim());
 
   return (
     <div className="flex flex-col gap-7">
@@ -48,7 +64,7 @@ export function AnalyzeView({
           <p className="mb-3 text-[11px] font-semibold tracking-[0.16em] text-muted-foreground uppercase">Understand the sentiment</p>
           <h1 className="text-3xl font-semibold tracking-tight text-balance sm:text-4xl">Every text tells a story.</h1>
           <p className="mt-3 max-w-[58ch] text-sm leading-relaxed text-muted-foreground sm:text-base">
-            Turn reviews, posts, and headlines into clear insights. Explore the sentiment,
+            Turn reviews, posts, headlines, or uploaded photos into clear insights. Explore the sentiment,
             compare probabilities, and see the words behind the result.
           </p>
         </div>
@@ -58,11 +74,11 @@ export function AnalyzeView({
         </div>
       </div>
 
-      <div className="grid items-start gap-5 lg:grid-cols-2">
-        <Card>
+      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-2">
+        <Card className="min-w-0">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2.5"><ScanTextIcon className="size-4 text-muted-foreground" aria-hidden="true" />Your text</CardTitle>
-            <div className="flex flex-wrap gap-1.5" aria-label="Examples">
+            <CardTitle className="flex items-center gap-2.5"><ScanTextIcon className="size-4 text-muted-foreground" aria-hidden="true" />Your text &amp; photos</CardTitle>
+            {!hasPhotos && <div className="flex flex-wrap gap-1.5" aria-label="Examples">
               {examples.map((example) => (
                 <button
                   key={example.name}
@@ -76,9 +92,10 @@ export function AnalyzeView({
                   {example.name}
                 </button>
               ))}
-            </div>
+            </div>}
           </CardHeader>
           <CardContent>
+            <PhotoInput attachments={attachments} models={photoModels} task={photoTask} onTaskChange={onPhotoTaskChange} disabled={running} />
             <label htmlFor="analyze-text" className="sr-only">
               Text to analyze
             </label>
@@ -86,11 +103,12 @@ export function AnalyzeView({
               id="analyze-text"
               value={text}
               maxLength={maxChars}
+              disabled={running}
               onChange={(e) => onTextChange(e.target.value)}
               onKeyDown={(e) => {
-                if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                   e.preventDefault();
-                  onAnalyze();
+                  if (canSubmit) onAnalyze();
                 }
               }}
               placeholder="Type or paste a review, a post, a headline…"
@@ -105,22 +123,23 @@ export function AnalyzeView({
                 <span>First {limits?.max_length ?? 512} tokens are analyzed</span>
               </p>
               <div className="flex gap-2">
-                <Button variant="outline" onClick={() => onTextChange("")} disabled={!text}>
+                <Button variant="outline" onClick={() => { onTextChange(""); attachments.items.forEach((item) => attachments.remove(item.id)); }} disabled={running || (!text && !hasPhotos)}>
                   Clear
                 </Button>
-                <Button onClick={() => onAnalyze()} disabled={!text.trim() || running}>
+                <Button onClick={() => onAnalyze()} disabled={!canSubmit}>
                   {running && <LoaderCircleIcon className="animate-spin" aria-hidden="true" />}
                   {running ? "Analyzing" : "Analyze"}
                   {!running && (
-                    <kbd className="hidden font-mono text-[11px] opacity-60 sm:inline">Ctrl ↵</kbd>
+                    <kbd className="hidden font-mono text-[11px] opacity-60 sm:inline">Enter ↵</kbd>
                   )}
                 </Button>
               </div>
             </div>
+            <p className="text-xs text-muted-foreground">Enter to submit text or photos · Shift+Enter for a new line.</p>
           </CardContent>
         </Card>
 
-        <Card aria-live="polite">
+        <Card className="min-w-0" aria-live="polite">
           <CardHeader>
             <CardTitle className="flex items-center gap-2.5"><ChartNoAxesColumnIncreasingIcon className="size-4 text-muted-foreground" aria-hidden="true" />Sentiment insights</CardTitle>
             {result && (
@@ -147,7 +166,9 @@ export function AnalyzeView({
               </div>
             )}
             {analysis.phase === "running" &&
-              (analysis.modelReady ? (
+              (analysis.readingPhotos ? (
+                <div className="flex flex-col items-center gap-3 py-12 text-center"><LoaderCircleIcon className="size-7 animate-spin text-muted-foreground" aria-hidden="true" /><p className="font-medium">Reading photos and analyzing sentiment…</p><p className="max-w-80 text-sm text-muted-foreground">The photo reader prepares the text, then {model?.name ?? "your sentiment model"} scores it.</p></div>
+              ) : analysis.modelReady ? (
                 <ResultSkeleton />
               ) : (
                 <div className="flex flex-col items-center gap-3 py-12 text-center">
@@ -172,11 +193,19 @@ export function AnalyzeView({
               </div>
             )}
             {result && (
+              <>
+              {photo && <details className="rounded-xl border bg-background/50 p-3" open>
+                <summary className="cursor-pointer text-sm font-medium">{photo.task === "extract_text" ? "Text read from photos" : photo.task === "describe" ? "Photo description" : "Photo answer"}</summary>
+                <p className="mt-2 text-xs text-muted-foreground">Read by {photo.model}. The sentiment scores describe the text below{photo.task === "question" ? "." : " and any additional text you entered."}</p>
+                <p className="mt-3 max-h-60 overflow-y-auto whitespace-pre-wrap text-sm leading-relaxed [overflow-wrap:anywhere]">{photo.text}</p>
+                <details className="mt-3"><summary className="cursor-pointer text-xs text-muted-foreground">Source photos</summary><div className="mt-2"><PhotoGallery images={photo.images} /></div></details>
+              </details>}
               <ResultView
                 result={result}
                 lowConfidence={limits?.low_confidence ?? 0.6}
                 specialTokens={SPECIAL_TOKENS}
               />
+              </>
             )}
           </CardContent>
         </Card>

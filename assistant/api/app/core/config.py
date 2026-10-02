@@ -43,6 +43,14 @@ class Settings(BaseSettings):
     max_text_chars: int = Field(default=5000, ge=1, le=100_000)
     max_batch_items: int = Field(default=1000, ge=1, le=10_000)
 
+    # Photo chat uses Ollama independently of the sentiment classifiers.
+    ollama_host: str = "http://localhost:11434"
+    ollama_chat_timeout: float = Field(default=600, ge=10, le=3600)
+    max_images_per_message: int = Field(default=5, ge=1, le=10)
+    max_images_per_request: int = Field(default=20, ge=1, le=100)
+    max_image_bytes: int = Field(default=10 * 1024 * 1024, ge=1024, le=20 * 1024 * 1024)
+    vision_models: list[str] = Field(default_factory=list)
+
     # Explanations (integrated gradients). 0 turns them off.
     explain_steps: int = Field(default=16, ge=0, le=200)
     low_confidence: float = Field(default=0.6, gt=0, lt=1)

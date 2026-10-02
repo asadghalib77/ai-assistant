@@ -38,7 +38,7 @@ function describe(detail: unknown, fallback: string): string {
 }
 
 /** AbortSignal.any with a fallback for browsers that lack it (Safari < 17.4). */
-function anySignal(signals: AbortSignal[]): AbortSignal {
+export function anySignal(signals: AbortSignal[]): AbortSignal {
   if (typeof AbortSignal.any === "function") return AbortSignal.any(signals);
   const controller = new AbortController();
   for (const signal of signals) {
@@ -51,14 +51,14 @@ function anySignal(signals: AbortSignal[]): AbortSignal {
   return controller.signal;
 }
 
-function timeoutSignal(ms: number): AbortSignal {
+export function timeoutSignal(ms: number): AbortSignal {
   if (typeof AbortSignal.timeout === "function") return AbortSignal.timeout(ms);
   const controller = new AbortController();
   setTimeout(() => controller.abort(), ms);
   return controller.signal;
 }
 
-async function request<T>(
+export async function request<T>(
   path: string,
   init: { method?: "GET" | "POST"; body?: unknown; signal?: AbortSignal; timeoutMs?: number } = {},
 ): Promise<T> {

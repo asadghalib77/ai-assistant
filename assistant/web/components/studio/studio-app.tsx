@@ -5,6 +5,7 @@ import { MenuIcon, RefreshCwIcon, ServerCrashIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import { AnalyzeView, type AnalysisState } from "@/components/studio/analyze-view";
+import { PhotoChatView } from "@/components/studio/photo-chat-view";
 import { BatchView } from "@/components/studio/batch-view";
 import { ModelView } from "@/components/studio/model-view";
 import { Sidebar } from "@/components/studio/sidebar";
@@ -14,12 +15,17 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useHistory } from "@/hooks/use-history";
 import { useModels } from "@/hooks/use-models";
-import { ApiError, api, errorMessage } from "@/lib/api";
+import { useAttachments } from "@/hooks/use-attachments";
+import { usePhotoModels } from "@/hooks/use-photo-models";
+import { PhotoDropZone } from "@/components/photos/drop-overlay";
+import { ApiError, api, errorMessage, request as apiRequest } from "@/lib/api";
+import { collectGarbage, loadImage } from "@/lib/image-store";
+import { blobToBase64, DEFAULT_IMAGE_LIMITS } from "@/lib/images";
 import { APP_CONFIG } from "@/lib/config";
 import { KEYS, readStore, writeStore } from "@/lib/storage";
 import { GithubLink } from "@/components/studio/github-link";
 import { LinkedinLink } from "@/components/studio/linkedin-link";
-import type { HistoryEntry } from "@/lib/types";
+import type { ApiChatMessage, HistoryEntry, PhotoPredictResponse, PhotoSource, PhotoTask } from "@/lib/types";
 
 const VIEWS = ["analyze", "batch", "model"] as const;
 type View = (typeof VIEWS)[number];
@@ -48,9 +54,36 @@ export function StudioApp() {
     writeStore(KEYS.username, name);
   };
   const [text, setText] = useState("");
+  const [purpose, setPurpose] = useState<"analyze" | "chat" | null>(null);
+  const [chatBusy, setChatBusy] = useState(false);
   const [analysis, setAnalysis] = useState<AnalysisState>({ phase: "idle" });
+  const photoModels = usePhotoModels(view === "analyze");
+  const retainedImages = new Set(recent.entries.flatMap((entry) => (entry.photo?.images ?? []).map((image) => image.id)));
+  if (analysis.phase === "done") analysis.photo?.images.forEach((image) => retainedImages.add(image.id));
+  const imageLimits = photoModels.data?.image_limits ?? DEFAULT_IMAGE_LIMITS;
+  const attachments = useAttachments(imageLimits, retainedImages);
+  const [photoTask, setPhotoTask] = useState<PhotoTask>("extract_text");
+  const photoContext = useRef<{ key: string; turns: ApiChatMessage[] }>({ key: "", turns: [] });
+  const photoKey = attachments.ready.map((image) => image.id).join(",");
+  useEffect(() => {
+    if (photoContext.current.key !== photoKey) photoContext.current = { key: photoKey, turns: [] };
+  }, [photoKey]);
+  useEffect(() => {
+    // Keep both the existing chat's photos and the unified analysis history's photos.
+    const saved = readStore<unknown>(KEYS.history, []);
+    const chat = readStore<unknown>(KEYS.photoChat, []);
+    const ids = new Set<string>();
+    for (const entries of [saved, chat]) {
+      if (!Array.isArray(entries)) continue;
+      for (const entry of entries) {
+        const images = entry?.photo?.images ?? entry?.images;
+        if (Array.isArray(images)) for (const image of images) if (typeof image?.id === "string") ids.add(image.id);
+      }
+    }
+    void collectGarbage(ids, Date.now() - 24 * 60 * 60_000);
+  }, []);
   const request = useRef<AbortController | null>(null);
-  const lastRun = useRef<{ text: string; model: string } | null>(null);
+  const lastRun = useRef<{ text: string; model: string; photo?: PhotoSource } | null>(null);
 
   const { selected, setStatus, refresh } = models;
 
@@ -74,9 +107,19 @@ export function StudioApp() {
 
   // ---------------------------------------------------------------- analysis
   const analyze = useCallback(
-    async (value?: string, { save = true }: { save?: boolean } = {}) => {
+    async (value?: string, { save = true, textOnly = false, photo: previousPhoto }: { save?: boolean; textOnly?: boolean; photo?: PhotoSource } = {}) => {
       const input = value ?? text;
-      if (!input.trim()) return;
+      const images = textOnly ? [] : attachments.ready;
+      if (!input.trim() && !images.length) return;
+      if (!textOnly && attachments.processing) return;
+      if (images.length && (!photoModels.chosen?.vision || photoModels.error)) {
+        toast.error(photoModels.error ?? "Choose a photo reader that can see images.");
+        return;
+      }
+      if (images.length && photoTask === "question" && !input.trim()) {
+        toast.error("Enter a question about the photo.");
+        return;
+      }
       if (!selected) {
         toast.error(models.error ?? "No model is available yet.");
         return;
@@ -85,19 +128,43 @@ export function StudioApp() {
       const controller = new AbortController();
       request.current = controller;
       // Recorded now (not on success) so a model switch mid-request re-runs this text.
-      lastRun.current = { text: input, model: selected.id };
-      setAnalysis({ phase: "running", modelReady: selected.status === "ready" });
-      if (selected.status !== "ready") setStatus(selected.id, "loading");
+      lastRun.current = images.length ? null : { text: input, model: selected.id, photo: previousPhoto };
+      setAnalysis({ phase: "running", modelReady: selected.status === "ready", readingPhotos: images.length > 0 });
+      if (!images.length && selected.status !== "ready") setStatus(selected.id, "loading");
 
       try {
-        const result = await api.predict(
-          { text: input, model: selected.id, explain: true },
-          controller.signal,
-        );
-        setAnalysis({ phase: "done", result });
+        let source = previousPhoto;
+        let analyzedText = input;
+        let result;
+        if (images.length) {
+          const encoded = await Promise.all(images.map(async (image) => {
+            const blob = await loadImage(image.id);
+            if (!blob) throw new Error("This photo is no longer stored in this browser. Please attach it again.");
+            return { media_type: image.mediaType, data: await blobToBase64(blob) };
+          }));
+          if (controller.signal.aborted) return;
+          const response = await apiRequest<PhotoPredictResponse>("/predict/photos", {
+            method: "POST", signal: controller.signal, timeoutMs: 10 * 60_000,
+            body: { text: input, images: encoded, model: selected.id, photo_model: photoModels.selection === "auto" ? null : photoModels.selection, task: photoTask, context: photoTask === "question" ? photoContext.current.turns : [], explain: true },
+          });
+          if (controller.signal.aborted) return;
+          result = response;
+          analyzedText = response.analyzed_text;
+          source = { text: response.photo_text, model: response.photo_model, task: response.photo_task, latency_ms: response.photo_latency_ms, images };
+          if (photoTask === "question") photoContext.current.turns = [...photoContext.current.turns, { role: "user", content: input }, { role: "assistant", content: response.photo_text }].slice(-20) as ApiChatMessage[];
+        } else {
+          result = await api.predict({ text: input, model: selected.id, explain: true }, controller.signal);
+          if (controller.signal.aborted) return;
+        }
+        lastRun.current = { text: analyzedText, model: selected.id, photo: source };
+        setAnalysis({ phase: "done", result, photo: source });
         setStatus(selected.id, "ready");
         if (save) {
-          recent.add({ text: input, label: result.label, score: result.score, model: selected.id });
+          recent.add({ text: analyzedText, label: result.label, score: result.score, model: selected.id, photo: source });
+        }
+        if (images.length) {
+          attachments.takeAll();
+          setText("");
         }
       } catch (err) {
         if (controller.signal.aborted) return;
@@ -108,7 +175,7 @@ export function StudioApp() {
         if (request.current === controller) request.current = null;
       }
     },
-    [text, selected, models.error, setStatus, refresh, recent],
+    [text, selected, models.error, setStatus, refresh, recent, attachments, photoModels, photoTask],
   );
 
   // When the model changes, re-run the last text with the new model.
@@ -118,7 +185,7 @@ export function StudioApp() {
   useEffect(() => {
     const last = lastRun.current;
     if (selectedId && last && last.model !== selectedId) {
-      void analyzeRef.current(last.text, { save: false });
+      void analyzeRef.current(last.text, { save: false, textOnly: true, photo: last.photo });
     }
   }, [selectedId]);
 
@@ -126,24 +193,31 @@ export function StudioApp() {
   const newAnalysis = () => {
     request.current?.abort();
     lastRun.current = null;
+    attachments.takeAll();
+    photoContext.current = { key: "", turns: [] };
     setText("");
     setAnalysis({ phase: "idle" });
+    setPurpose(null);
+    setChatBusy(false);
     changeView("analyze");
     setNavOpen(false);
     requestAnimationFrame(() => document.getElementById("analyze-text")?.focus());
   };
 
   const openEntry = (entry: HistoryEntry) => {
+    request.current?.abort();
+    attachments.takeAll();
     setNavOpen(false);
     changeView("analyze");
     setText(entry.text);
+    setPurpose("analyze");
     const known = models.data?.models.some((m) => m.id === entry.model);
     if (known && entry.model !== selected?.id) {
       // The model-change effect re-runs the text with the entry's model.
-      lastRun.current = { text: entry.text, model: "" };
+      lastRun.current = { text: entry.text, model: "", photo: entry.photo };
       models.select(entry.model);
     } else {
-      void analyze(entry.text, { save: false });
+      void analyze(entry.text, { save: false, textOnly: true, photo: entry.photo });
     }
   };
 
@@ -169,6 +243,7 @@ export function StudioApp() {
 
   return (
     <div className="flex h-dvh flex-col">
+      <PhotoDropZone enabled={view === "analyze" && purpose === "analyze" && analysis.phase !== "running"} onFiles={attachments.add} limitText={`JPEG, PNG, WebP or GIF · up to ${imageLimits.per_message} photos, ${Math.round(imageLimits.max_bytes / 1024**2)} MB each`} />
       <div className="flex min-h-0 flex-1">
       <aside className="hidden w-72 shrink-0 border-r md:block">{sidebar}</aside>
       <Sheet open={navOpen} onOpenChange={setNavOpen}>
@@ -195,6 +270,7 @@ export function StudioApp() {
               models={models.data?.models ?? []}
               value={selected?.id}
               onChange={models.select}
+              disabled={analysis.phase === "running" && analysis.readingPhotos}
             />
           </div>
           <div className="hidden flex-1 md:block" />
@@ -230,6 +306,15 @@ export function StudioApp() {
             )}
 
             <TabsContent value="analyze" forceMount className="data-[state=inactive]:hidden">
+              <div className="mb-5 rounded-xl border bg-card p-4 text-center">
+                <p className="mb-3 text-sm font-medium">What would you like to do?</p>
+                <div className="flex flex-wrap justify-center gap-2" role="group" aria-label="Choose an action">
+                  <Button variant={purpose === "analyze" ? "default" : "outline"} aria-pressed={purpose === "analyze"} disabled={chatBusy || analysis.phase === "running"} onClick={() => setPurpose("analyze")}>Analyze text / photos</Button>
+                  <Button variant={purpose === "chat" ? "default" : "outline"} aria-pressed={purpose === "chat"} disabled={chatBusy || analysis.phase === "running"} onClick={() => setPurpose("chat")}>Chat / ask questions</Button>
+                </div>
+                {!purpose && <p className="mt-3 text-xs text-muted-foreground">Choose sentiment analysis or a conversation with Ollama to get started.</p>}
+              </div>
+              <div hidden={purpose !== "analyze"}>
               <AnalyzeView
                 text={text}
                 onTextChange={setText}
@@ -238,7 +323,13 @@ export function StudioApp() {
                 model={selected}
                 models={models.data?.models ?? []}
                 limits={models.data?.limits ?? null}
+                attachments={attachments}
+                photoModels={photoModels}
+                photoTask={photoTask}
+                onPhotoTaskChange={setPhotoTask}
               />
+              </div>
+              {purpose === "chat" && <PhotoChatView active={view === "analyze"} sharedAttachments={attachments} draft={text} onDraftChange={setText} onBusyChange={setChatBusy} />}
             </TabsContent>
             <TabsContent value="batch" forceMount className="data-[state=inactive]:hidden">
               <BatchView

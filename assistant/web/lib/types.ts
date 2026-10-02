@@ -85,4 +85,68 @@ export interface HistoryEntry {
   score: number;
   model: string;
   at: number;
+  photo?: PhotoSource;
+}
+
+// Mirrors api/app/photo_schemas.py. Photo bytes are stored in IndexedDB only.
+export interface ChatImage {
+  id: string;
+  name: string;
+  mediaType: "image/jpeg" | "image/png" | "image/webp" | "image/gif";
+  width: number;
+  height: number;
+  size: number;
+  resizedFrom?: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  images?: ChatImage[];
+  model?: string;
+  error?: string;
+  status?: "streaming" | "done" | "stopped" | "error";
+}
+
+export interface ImageLimits {
+  per_message: number;
+  per_request: number;
+  max_bytes: number;
+}
+
+export interface PhotoModel {
+  id: string;
+  vision: boolean;
+  cloud: boolean;
+}
+
+export interface PhotoModelsResponse {
+  models: PhotoModel[];
+  default_vision: string | null;
+  image_limits: ImageLimits;
+}
+
+export interface ApiChatMessage {
+  role: "user" | "assistant";
+  content: string;
+  images?: { media_type: ChatImage["mediaType"]; data: string }[];
+}
+
+export type PhotoTask = "extract_text" | "describe" | "question";
+
+export interface PhotoPredictResponse extends PredictResponse {
+  analyzed_text: string;
+  photo_text: string;
+  photo_model: string;
+  photo_task: PhotoTask;
+  photo_latency_ms: number;
+}
+
+export interface PhotoSource {
+  text: string;
+  model: string;
+  task: PhotoTask;
+  latency_ms: number;
+  images: ChatImage[];
 }

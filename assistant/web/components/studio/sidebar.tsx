@@ -33,13 +33,13 @@ export function Sidebar({
 
   return (
     <div className="flex h-full flex-col gap-3 bg-sidebar px-3 pt-[calc(0.875rem+env(safe-area-inset-top))] pb-3">
-      <div className="flex items-center gap-2.5 px-1.5 pb-1">
+      <button type="button" onClick={onNew} aria-label={`${APP_CONFIG.appName} home`} className="flex items-center gap-2.5 rounded-lg px-1.5 pb-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
         <Image src="/ss-logo.svg" alt="SS" width={40} height={40} className="size-10 shrink-0 rounded-xl shadow-sm" />
         <div className="leading-tight">
           <p className="text-[15px] font-semibold tracking-tight">{APP_CONFIG.appName}</p>
           <p className="mt-1 text-[11px] font-medium tracking-wide text-muted-foreground">Test Project</p>
         </div>
-      </div>
+      </button>
 
       <Button variant="outline" className="justify-center" onClick={onNew}>
         <PlusIcon aria-hidden="true" />

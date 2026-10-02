@@ -19,3 +19,6 @@ next-env.d.ts
 .DS_Store
 .idea/
 .vscode/
+
+# Browser verification artifacts
+photo-chat-e2e-out/

@@ -19,14 +19,16 @@ export function ModelPicker({
   models,
   value,
   onChange,
+  disabled = false,
 }: {
   models: ModelInfo[];
   value: string | undefined;
   onChange: (id: string) => void;
+  disabled?: boolean;
 }) {
   const current = models.find((m) => m.id === value);
   return (
-    <Select value={value} onValueChange={onChange} disabled={models.length === 0}>
+    <Select value={value} onValueChange={onChange} disabled={disabled || models.length === 0}>
       <SelectTrigger aria-label="Model" className="h-9 w-full max-w-full min-w-0 font-medium sm:w-auto sm:min-w-64">
         <SelectValue placeholder={models.length ? "Choose a model" : "Connecting…"}>
           {current && (

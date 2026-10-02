@@ -34,7 +34,7 @@ export function UserMenu({ username, onUsernameChange, apiOnline }: {
               <span className="block truncate text-[13px] font-medium">{username}</span>
               <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
                 <StatusDot status={apiOnline ? "ready" : "offline"} className="size-1.5" />
-                {apiOnline ? "API connected" : "API offline"}
+                Demo Account
               </span>
             </span>
             <ChevronUpIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />

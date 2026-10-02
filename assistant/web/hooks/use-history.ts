@@ -16,7 +16,10 @@ function isEntry(value: unknown): value is HistoryEntry {
     typeof e.label === "string" &&
     typeof e.score === "number" &&
     typeof e.model === "string" &&
-    typeof e.at === "number"
+    typeof e.at === "number" &&
+    (!e.photo || (typeof e.photo.text === "string" && typeof e.photo.model === "string" &&
+      ["extract_text", "describe", "question"].includes(e.photo.task) && Array.isArray(e.photo.images) &&
+      e.photo.images.every((image) => typeof image?.id === "string" && typeof image.name === "string" && typeof image.width === "number" && typeof image.height === "number")))
   );
 }
 
