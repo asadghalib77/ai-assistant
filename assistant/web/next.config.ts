@@ -5,6 +5,7 @@ import type { NextConfig } from "next";
 const API_URL = process.env.API_URL ?? "http://localhost:8000";
 
 const nextConfig: NextConfig = {
+  devIndicators: false,
   output: "standalone",
   experimental: {
     // Rewrites time out after 30 s by default. The first request for a model downloads

@@ -132,9 +132,13 @@ export function StudioApp() {
       request.current?.abort();
       const controller = new AbortController();
       request.current = controller;
+      if (save) {
+        setText("");
+        requestAnimationFrame(() => document.getElementById("analyze-text")?.focus());
+      }
       // Recorded now (not on success) so a model switch mid-request re-runs this text.
       lastRun.current = images.length ? null : { text: input, model: selected.id, photo: previousPhoto };
-      setAnalysis({ phase: "running", modelReady: selected.status === "ready", readingPhotos: images.length > 0 });
+      setAnalysis({ phase: "running", modelReady: selected.status === "ready", readingPhotos: images.length > 0, submittedText: input });
       if (!images.length && selected.status !== "ready") setStatus(selected.id, "loading");
 
       try {
@@ -162,18 +166,17 @@ export function StudioApp() {
           if (controller.signal.aborted) return;
         }
         lastRun.current = { text: analyzedText, model: selected.id, photo: source };
-        setAnalysis({ phase: "done", result, photo: source });
+        setAnalysis({ phase: "done", result, photo: source, submittedText: input });
         setStatus(selected.id, "ready");
         if (save) {
           recent.add({ text: analyzedText, label: result.label, score: result.score, model: selected.id, photo: source });
         }
         if (images.length) {
           attachments.takeAll();
-          setText("");
         }
       } catch (err) {
         if (controller.signal.aborted) return;
-        setAnalysis({ phase: "error", message: errorMessage(err) });
+        setAnalysis({ phase: "error", message: errorMessage(err), submittedText: input });
         // Resync model status: the API may be down, or the model may have failed to load.
         if (err instanceof ApiError && (err.status === 0 || err.status >= 500)) void refresh();
       } finally {
@@ -329,7 +332,7 @@ export function StudioApp() {
                 active={view === "analyze" && purpose === "analyze"}
                 text={text}
                 onTextChange={setText}
-                onAnalyze={(value) => void analyze(value)}
+                onAnalyze={(value) => void analyze(value ?? (analysis.phase === "error" && !text.trim() ? lastRun.current?.text : undefined))}
                 analysis={analysis}
                 model={selected}
                 models={models.data?.models ?? []}
@@ -366,12 +369,10 @@ export function StudioApp() {
         </main>
       </Tabs>
       </div>
-      <footer className="flex shrink-0 justify-center border-t bg-card py-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))]">
-        <nav aria-label="Social profiles" className="flex items-center gap-3">
+        <nav aria-label="Social profiles" className="fixed right-[max(calc(1rem+0.5cm),env(safe-area-inset-right))] bottom-[max(1rem,env(safe-area-inset-bottom))] z-40 flex items-center gap-2">
           <GithubLink />
           <LinkedinLink />
         </nav>
-      </footer>
     </div>
   );
 }

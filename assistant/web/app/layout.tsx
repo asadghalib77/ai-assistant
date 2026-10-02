@@ -12,8 +12,8 @@ export const metadata: Metadata = {
   title: APP_CONFIG.appName,
   description: APP_CONFIG.appDescription,
   icons: {
-    icon: { url: "/ss-logo.svg", type: "image/svg+xml" },
-    shortcut: "/ss-logo.svg",
+    icon: { url: "/tb-logo.svg", type: "image/svg+xml" },
+    shortcut: "/tb-logo.svg",
   },
 };
 

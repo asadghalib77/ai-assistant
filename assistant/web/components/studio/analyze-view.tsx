@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { ChartNoAxesColumnIncreasingIcon, LayersIcon, LoaderCircleIcon, RefreshCwIcon, ScanTextIcon, TriangleAlertIcon } from "lucide-react";
 
 import { Eyebrow, ResultView } from "@/components/studio/result-view";
@@ -20,9 +21,9 @@ const SPECIAL_TOKENS = new Set(["[CLS]", "[SEP]", "[PAD]", "<s>", "</s>", "<pad>
 
 export type AnalysisState =
   | { phase: "idle" }
-  | { phase: "running"; modelReady: boolean; readingPhotos?: boolean }
-  | { phase: "done"; result: PredictResponse; photo?: PhotoSource }
-  | { phase: "error"; message: string };
+  | { phase: "running"; modelReady: boolean; readingPhotos?: boolean; submittedText: string }
+  | { phase: "done"; result: PredictResponse; photo?: PhotoSource; submittedText: string }
+  | { phase: "error"; message: string; submittedText: string };
 
 export function AnalyzeView({
   active = true,
@@ -51,6 +52,12 @@ export function AnalyzeView({
   photoTask: PhotoTask;
   onPhotoTaskChange: (task: PhotoTask) => void;
 }) {
+  const textInput = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    if (!active) return;
+    const frame = requestAnimationFrame(() => textInput.current?.focus({ preventScroll: true }));
+    return () => cancelAnimationFrame(frame);
+  }, [active]);
   const maxChars = limits?.max_text_chars ?? 5000;
   const running = analysis.phase === "running";
   const examples = EXAMPLES[model?.domain ?? "Topic"] ?? EXAMPLES.Topic;
@@ -63,14 +70,6 @@ export function AnalyzeView({
   return (
     <div className="flex flex-col gap-7">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="mb-3 text-[11px] font-semibold tracking-[0.16em] text-muted-foreground uppercase">Understand the sentiment</p>
-          <h1 className="text-3xl font-semibold tracking-tight text-balance sm:text-4xl">Every text tells a story.</h1>
-          <p className="mt-3 max-w-[58ch] text-sm leading-relaxed text-muted-foreground sm:text-base">
-            Turn reviews, posts, headlines, or uploaded photos into clear insights. Explore the sentiment,
-            compare probabilities, and see the words behind the result.
-          </p>
-        </div>
         <div className="inline-flex items-center gap-2 rounded-full border bg-card px-3 py-2 text-xs font-medium text-muted-foreground">
           <LayersIcon className="size-3.5" aria-hidden="true" />
           {models.length ? `${models.length} models available` : "Connecting to models"}
@@ -102,11 +101,12 @@ export function AnalyzeView({
             <label htmlFor="analyze-text" className="sr-only">
               Text to analyze
             </label>
+            <div className="overflow-visible rounded-xl border bg-background/50 shadow-xs focus-within:ring-2 focus-within:ring-ring/50">
             <Textarea
+              ref={textInput}
               id="analyze-text"
               value={text}
               maxLength={maxChars}
-              disabled={running}
               onChange={(e) => onTextChange(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -115,9 +115,18 @@ export function AnalyzeView({
                 }
               }}
               placeholder="Type or paste a review, a post, a headline…"
-              className="max-h-96 min-h-56 resize-y rounded-xl bg-background/50 p-4 text-[15px] leading-relaxed md:text-[15px]"
+              className="max-h-96 min-h-44 resize-y rounded-t-xl rounded-b-none border-0 bg-transparent p-4 text-[15px] leading-relaxed shadow-none focus-visible:ring-0 md:text-[15px] dark:bg-transparent"
             />
-            <DictationInput value={text} onChange={onTextChange} maxLength={maxChars} disabled={running || !active} label="analysis text" />
+            <div className="flex items-center justify-end gap-2 px-3 pb-3">
+              <DictationInput compact value={text} onChange={onTextChange} maxLength={maxChars} disabled={running || !active} label="analysis text" onStop={(value) => {
+                if (!running && !photoBlocked && model && (photoTask !== "question" || value.trim())) onAnalyze(value);
+              }} />
+              <Button onClick={() => onAnalyze()} disabled={!canSubmit}>
+                {running && <LoaderCircleIcon className="animate-spin" aria-hidden="true" />}
+                {running ? "Analyzing" : "Analyze"}
+              </Button>
+            </div>
+            </div>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="flex flex-wrap gap-x-3 text-xs text-muted-foreground tabular">
                 <span>
@@ -130,13 +139,6 @@ export function AnalyzeView({
                 <Button variant="outline" onClick={() => { onTextChange(""); attachments.items.forEach((item) => attachments.remove(item.id)); }} disabled={running || (!text && !hasPhotos)}>
                   Clear
                 </Button>
-                <Button onClick={() => onAnalyze()} disabled={!canSubmit}>
-                  {running && <LoaderCircleIcon className="animate-spin" aria-hidden="true" />}
-                  {running ? "Analyzing" : "Analyze"}
-                  {!running && (
-                    <kbd className="hidden font-mono text-[11px] opacity-60 sm:inline">Enter ↵</kbd>
-                  )}
-                </Button>
               </div>
             </div>
             <p className="text-xs text-muted-foreground">Enter to submit text or photos · Shift+Enter for a new line.</p>
@@ -148,9 +150,6 @@ export function AnalyzeView({
             <CardTitle className="flex items-center gap-2.5"><ChartNoAxesColumnIncreasingIcon className="size-4 text-muted-foreground" aria-hidden="true" />Sentiment insights</CardTitle>
             {result && (
               <div className="flex flex-wrap gap-1.5">
-                <Chip title={result.model}>
-                  {models.find((m) => m.id === result.model)?.name ?? result.model}
-                </Chip>
                 <Chip title="Inference time">{duration(result.latency_ms)}</Chip>
                 <Chip title="Tokens">{result.num_tokens} tokens</Chip>
                 <Chip title="Device" mono>
@@ -160,24 +159,27 @@ export function AnalyzeView({
             )}
           </CardHeader>
           <CardContent>
+            {analysis.phase !== "idle" && analysis.submittedText.trim() && (
+              <p aria-label="Submitted text" className="max-h-20 overflow-y-auto whitespace-pre-wrap text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]">{analysis.submittedText}</p>
+            )}
             {analysis.phase === "idle" && (
               <div className="flex min-h-72 flex-col items-center justify-center gap-4 rounded-xl border border-dashed bg-background/50 px-4 py-8 text-center text-muted-foreground">
                 <span className="grid size-14 place-items-center rounded-2xl border bg-card shadow-xs"><ChartNoAxesColumnIncreasingIcon className="size-6" aria-hidden="true" /></span>
                 <p className="text-base font-medium text-foreground">A little text. A clearer picture.</p>
                 <p className="max-w-72 text-sm leading-relaxed">
-                  Enter a text and press Analyze, or pick an example to see how {model?.name ?? "the model"} reads it.
+                  Enter text or attach an image to see how we analyze text/image.
                 </p>
               </div>
             )}
             {analysis.phase === "running" &&
               (analysis.readingPhotos ? (
-                <div className="flex flex-col items-center gap-3 py-12 text-center"><LoaderCircleIcon className="size-7 animate-spin text-muted-foreground" aria-hidden="true" /><p className="font-medium">Reading photos and analyzing sentiment…</p><p className="max-w-80 text-sm text-muted-foreground">The photo reader prepares the text, then {model?.name ?? "your sentiment model"} scores it.</p></div>
+                <div className="flex flex-col items-center gap-3 py-12 text-center"><LoaderCircleIcon className="size-7 animate-spin text-muted-foreground" aria-hidden="true" /><p className="font-medium">Reading photos and analyzing sentiment…</p><p className="max-w-80 text-sm text-muted-foreground">We read the photos, then analyze the sentiment of the resulting text.</p></div>
               ) : analysis.modelReady ? (
                 <ResultSkeleton />
               ) : (
                 <div className="flex flex-col items-center gap-3 py-12 text-center">
                   <LoaderCircleIcon className="size-7 animate-spin text-muted-foreground" aria-hidden="true" />
-                  <p className="font-medium">Loading {model?.name ?? "the model"}…</p>
+                  <p className="font-medium">Preparing analysis…</p>
                   <p className="max-w-80 text-sm text-muted-foreground">
                     The first run downloads the model from Hugging Face. This can take a minute;
                     later requests are fast.
@@ -200,7 +202,7 @@ export function AnalyzeView({
               <>
               {photo && <details className="rounded-xl border bg-background/50 p-3" open>
                 <summary className="cursor-pointer text-sm font-medium">{photo.task === "extract_text" ? "Text read from photos" : photo.task === "describe" ? "Photo description" : "Photo answer"}</summary>
-                <p className="mt-2 text-xs text-muted-foreground">Read by {photo.model}. The sentiment scores describe the text below{photo.task === "question" ? "." : " and any additional text you entered."}</p>
+                <p className="mt-2 text-xs text-muted-foreground">The sentiment scores describe the text below{photo.task === "question" ? "." : " and any additional text you entered."}</p>
                 <p className="mt-3 max-h-60 overflow-y-auto whitespace-pre-wrap text-sm leading-relaxed [overflow-wrap:anywhere]">{photo.text}</p>
                 <details className="mt-3"><summary className="cursor-pointer text-xs text-muted-foreground">Source photos</summary><div className="mt-2"><PhotoGallery images={photo.images} /></div></details>
               </details>}

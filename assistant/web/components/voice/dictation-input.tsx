@@ -33,18 +33,20 @@ const errors: Record<string, string> = {
   "language-not-supported": "Your browser doesn't support dictation in this language.",
 };
 
-/** Dictation fills a draft only; it never submits or starts an assistant reply. */
-export function DictationInput({ value, onChange, maxLength, disabled = false, label, compact = false }: {
+/** Dictation fills a draft; callers can optionally submit after an explicit stop. */
+export function DictationInput({ value, onChange, maxLength, disabled = false, label, compact = false, onStop }: {
   value: string;
   onChange: (text: string) => void;
   maxLength: number;
   disabled?: boolean;
   label: string;
   compact?: boolean;
+  onStop?: (text: string) => void;
 }) {
-  const current = useRef({ value, onChange, maxLength, disabled });
-  current.current = { value, onChange, maxLength, disabled };
+  const current = useRef({ value, onChange, maxLength, disabled, onStop });
+  current.current = { value, onChange, maxLength, disabled, onStop };
   const recognition = useRef<Recognition | null>(null);
+  const stoppedByUser = useRef(false);
   const [listening, setListening] = useState(false);
   const [interim, setInterim] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
@@ -76,6 +78,7 @@ export function DictationInput({ value, onChange, maxLength, disabled = false, l
       return;
     }
     const instance = new Constructor();
+    stoppedByUser.current = false;
     recognition.current = instance;
     instance.continuous = true;
     instance.interimResults = true;
@@ -117,6 +120,9 @@ export function DictationInput({ value, onChange, maxLength, disabled = false, l
       setListening(false);
       setInterim("");
       if (!heard && !failed) setNotice("No speech was captured. Try again or type your text.");
+      if (stoppedByUser.current && !failed && !current.current.disabled && current.current.value.trim()) {
+        current.current.onStop?.(current.current.value);
+      }
     };
     try { instance.start(); setListening(true); }
     catch {
@@ -130,7 +136,10 @@ export function DictationInput({ value, onChange, maxLength, disabled = false, l
       className={compact ? "size-10 rounded-full" : undefined}
       disabled={disabled} aria-label={listening ? "Stop dictation" : `Dictate into ${label}`}
       aria-pressed={listening} title="Speech to text using your browser's speech service"
-      onClick={() => listening ? recognition.current?.stop() : start()}>
+      onClick={() => {
+        if (listening) { stoppedByUser.current = true; recognition.current?.stop(); }
+        else start();
+      }}>
       {listening ? <SquareIcon aria-hidden="true" /> : <MicIcon aria-hidden="true" />}
       {!compact && (listening ? "Stop dictation" : "Dictate")}
     </Button>

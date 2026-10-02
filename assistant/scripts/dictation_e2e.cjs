@@ -28,8 +28,8 @@ const { chromium } = require(require.resolve('playwright-core', { paths: [proces
       } }));
       await page.route('**/api/photo-models', (r) => r.fulfill({ json: {models: [{id: 'test', vision: true, cloud: false}], default_vision: 'test', image_limits: {per_message: 5, per_request: 20, max_bytes: 10485760}} }));
       await page.route('**/api/voice/config', (r) => r.fulfill({ json: {enabled: false, reason: 'Not configured', voices: []} }));
-      await page.route('**/api/predict', (r) => { submissions++; return r.fulfill({status: 503, json: {detail: 'Fixture'}}); });
-      await page.route('**/api/chat', (r) => { submissions++; return r.fulfill({status: 503, json: {detail: 'Fixture'}}); });
+      await page.route('**/api/predict', (r) => { submissions++; return r.fulfill({status: 422, json: {detail: 'Fixture'}}); });
+      await page.route('**/api/chat', (r) => { submissions++; return r.fulfill({status: 422, json: {detail: 'Fixture'}}); });
       await page.goto(process.env.BASE_URL || 'http://localhost:3000');
       await page.getByRole('button', {name: 'Analyze text / photos', exact: true}).click();
       const analyze = page.locator('#analyze-text');
@@ -43,7 +43,10 @@ const { chromium } = require(require.resolve('playwright-core', { paths: [proces
       assert.equal(await analyze.inputValue(), 'Typed spoken');
       await page.getByRole('button', {name: 'Stop dictation', exact: true}).click();
       assert(await page.evaluate(() => window.testSpeech.stopped));
-      assert.equal(submissions, 0);
+      await page.getByRole('alert').filter({hasText: 'Fixture'}).waitFor();
+      assert.equal(submissions, 1);
+      assert.equal(await analyze.inputValue(), '');
+      await analyze.fill('Typed spoken');
 
       await page.getByRole('button', {name: 'Dictate into analysis text'}).click();
       await page.evaluate(() => window.testSpeech.error('not-allowed'));
@@ -63,7 +66,7 @@ const { chromium } = require(require.resolve('playwright-core', { paths: [proces
       await page.evaluate(() => window.testSpeech.result('more words'));
       assert.equal(await chat.inputValue(), 'Edited while listening more words');
       await page.getByRole('button', {name: 'Stop dictation', exact: true}).click();
-      assert.equal(submissions, 0);
+      assert.equal(submissions, 1);
 
       await page.getByRole('button', {name: 'Analyze text / photos', exact: true}).click();
       await analyze.fill('');
@@ -75,12 +78,12 @@ const { chromium } = require(require.resolve('playwright-core', { paths: [proces
       await page.evaluate(() => { window.SpeechRecognition = undefined; });
       await page.getByRole('button', {name: 'Dictate into analysis text'}).click();
       await page.getByText(/browser doesn't support dictation/).waitFor();
-      assert.equal(submissions, 0);
+      assert.equal(submissions, 1);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
       fs.mkdirSync('voice-e2e-out', {recursive: true});
       await page.screenshot({path: path.join('voice-e2e-out', `dictation-${width}.png`), fullPage: true});
       assert.deepEqual(errors, []);
-      console.log(`PASS ${width}px: both fields, interim/final, duplicate prevention, editable draft, Stop, permission/network/unsupported feedback, length cap, navigation cleanup, no auto-submit`);
+      console.log(`PASS ${width}px: both fields, interim/final, duplicate prevention, editable draft, Stop, permission/network/unsupported feedback, length cap, navigation cleanup, analysis auto-submit only on manual Stop`);
       await page.close();
     }
   } finally { await browser.close(); }

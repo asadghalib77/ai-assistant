@@ -1,6 +1,6 @@
 /** Branding and placeholder user. Change these to rebrand the app. */
 export const APP_CONFIG = {
-  appName: "Sentiment Studio",
+  appName: "The Buddy",
   appDescription: "Sentiment analysis with PyTorch and Hugging Face Transformers.",
   user: { name: "User" },
 } as const;

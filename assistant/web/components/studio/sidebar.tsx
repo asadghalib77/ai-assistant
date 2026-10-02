@@ -12,7 +12,6 @@ import type { HistoryEntry, ModelInfo } from "@/lib/types";
 
 export function Sidebar({
   history,
-  models,
   apiOnline,
   onNew,
   onOpen,
@@ -37,12 +36,11 @@ export function Sidebar({
   userPhoto: string | null;
   onUserPhotoChange: (photo: string | null) => void;
 }) {
-  const nameOf = (id: string) => models.find((m) => m.id === id)?.name ?? id.split("/").pop();
 
   return (
     <div className="flex h-full flex-col gap-3 bg-sidebar px-3 pt-[calc(0.875rem+env(safe-area-inset-top))] pb-3">
       <button type="button" onClick={onNew} aria-label={`${APP_CONFIG.appName} home`} className="flex items-center gap-2.5 rounded-lg px-1.5 pb-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-        <Image src="/ss-logo.svg" alt="SS" width={40} height={40} className="size-10 shrink-0 rounded-xl shadow-sm" />
+        <Image src="/tb-logo.svg" alt="TB" width={40} height={40} className="size-10 shrink-0 rounded-xl shadow-sm" />
         <div className="leading-tight">
           <p className="text-[15px] font-semibold tracking-tight">{APP_CONFIG.appName}</p>
           <p className="mt-1 text-[11px] font-medium tracking-wide text-muted-foreground">Test Project</p>
@@ -85,7 +83,6 @@ export function Sidebar({
               <span className="flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
                 <LabelPill label={entry.label} className="text-[11px] font-normal text-foreground" />
                 <span className="tabular">{pct(entry.score, 0)}</span>
-                <span className="truncate">{nameOf(entry.model)}</span>
                 <span className="ml-auto shrink-0">{timeAgo(entry.at)}</span>
               </span>
             </button>
